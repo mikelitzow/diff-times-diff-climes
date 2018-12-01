@@ -8,7 +8,7 @@ library(MuMIn)
 # load biology data
 b.dat <- read.csv("salmon and non-salmon biology mar 28.csv", row.names = 1)
 
-# drop GOAPOP
+# drop GOAPOP///
 keep <- colnames(b.dat)!="GOAPOP"
 b.dat <- b.dat[,keep] 
 

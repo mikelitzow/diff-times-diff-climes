@@ -12,7 +12,7 @@ library(broom)
 library(lemon)
 library(MuMIn)
 
-# load data
+# load data...
 dat <- read.csv("clim vars for ordination.csv", row.names=1)
 
 # put years into row names
