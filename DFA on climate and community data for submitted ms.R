@@ -314,6 +314,84 @@ arrange(model.data, AICc)
 #save
 write.csv(arrange(model.data, AICc), "DFA model selection community 89-12.csv")
 
+###############################################
+# fit best model for each era
+cntl.list = list(minit=200, maxit=20000, allow.degen=FALSE, conv.test.slope.tol=0.1, abstol=0.0001)
+
+model.list = list(A="zero", m=2, R="diagonal and unequal") # best model for early era
+mod.early = MARSS(e.comm.dat, model=model.list, z.score=TRUE, form="dfa", control=cntl.list)
+
+# need to rotate!
+# and rotate the loadings
+Z.est = coef(mod.early, type="matrix")$Z
+H.inv = varimax(coef(mod.early, type="matrix")$Z)$rotmat
+Z.rot = as.data.frame(Z.est %*% H.inv)
+
+Z.rot$names <- rownames(e.comm.dat)
+Z.rot <- arrange(Z.rot, V1)
+Z.rot <- gather(Z.rot[,c(1,2)])
+Z.rot$names <- rownames(e.comm.dat)
+Z.rot$plot.names <- reorder(Z.rot$names, 28:1)
+ggplot(Z.rot, aes(plot.names, value, fill=key)) + geom_bar(stat="identity", position="dodge") +
+  theme_gray() 
+
+plot.early <- Z.rot
+#################################
+# and the late model
+
+# equal var covar one trend is the best for this era!
+model.list = list(A="zero", m=1, R="diagonal and equal")
+mod.late = MARSS(l.comm.dat, model=model.list, z.score=TRUE, form="dfa", control=cntl.list)
+
+# get CI and plot loadings...
+modCI.late <- MARSSparamCIs(mod.late)
+modCI.late
+
+# combine into one plot
+Z.rot$key <- rep(c("Trend 1", "Trend 2"), each=7)
+plot.CI.late$names.order <- reorder(plot.CI.late$names, plot.CI.late$mean)
+
+# set colors
+cb <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+early.plot <- ggplot(Z.rot, aes(plot.names, value, fill=key)) + geom_bar(stat="identity", position="dodge") +
+  theme_gray() + ylab("Loading") + xlab("") + ggtitle("1950-1988") + 
+  scale_fill_manual(values=c("Trend 1" = cb[2], "Trend 2" = cb[3])) +
+  theme(legend.position = c(0.8,0.2), legend.title=element_blank()) + geom_hline(yintercept = 0) +
+  theme(axis.text.x  = element_text(angle=90, hjust=1, vjust=0.5, size=12)) + ylim(-0.6, 0.8)
+
+# reorder Z plot
+plot.CI.late$plot.names <- reorder(plot.CI.late$names, c(1,3,5,2,6,7,4))
+
+late.plot <- ggplot(plot.CI.late, aes(x=plot.names, y=mean)) + geom_bar(position="dodge", stat="identity", fill=cb[2]) +
+  geom_errorbar(aes(ymax=upCI, ymin=lowCI), position=dodge, width=0.5) +
+  ylab("Loading") + xlab("") + theme_gray() + theme(axis.text.x  = element_text(angle=90, hjust=1, vjust=0.5, size=12)) +
+  geom_hline(yintercept = 0) + ggtitle("1989-2012") + ylim(-0.6, 0.8) + ylab("")
+
+# combine
+pdf("loadings plot detrended environmental dfa both eras.pdf", 6, 4)
+ggarrange(early.plot,  late.plot, labels = c("a)", "b)"),  widths=c(1.3,1), ncol=2)
+dev.off()
+
+
+early.plot <- ggplot(Z.rot, aes(plot.names, value, fill=key)) + geom_bar( position="dodge",stat="identity") +
+  theme_gray() + ylab("Loading") + xlab("") + ggtitle("1965-1988") + 
+  scale_fill_manual(values=c("Trend 1" = cb[2], "Trend 2" = cb[3])) +
+  theme(legend.position = c(0.12,0.85), legend.title=element_blank()) + geom_hline(yintercept = 0) +
+  theme(axis.text.x  = element_text(angle=90, hjust=1, vjust=0.5, size=12)) 
+
+late.plot <- ggplot(plot.CI.late, aes(x=names.order, y=mean)) + 
+  geom_bar(position="dodge", stat="identity", fill=cb[2]) +
+  geom_errorbar(aes(ymax=upCI, ymin=lowCI), position=dodge, width=0.5) +
+  ylab("Loading") + xlab("") + theme_gray() + theme(axis.text.x  = element_text(angle=90, hjust=1, vjust=0.5, size=12)) +
+  geom_hline(yintercept = 0) + ggtitle("1989-2012")
+
+# combine
+pdf("loadings plot non-detrended community dfa both eras.pdf", 8, 5)
+ggarrange(early.plot,  late.plot, labels = c("a)", "b)"),  widths=c(1.3,1), ncol=2)
+dev.off()
+
+
 
 ###############################################
 # now find the best model for entire community time series
