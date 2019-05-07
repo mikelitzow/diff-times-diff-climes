@@ -4,6 +4,123 @@ library(dplyr)
 library(pracma)
 library(zoo)
 library(MuMIn)
+library(ncdf4)
+library(chron)
+library(ggpubr)
+library(cowplot)
+library(gridExtra)
+library(broom)
+library(lemon)
+
+# begin with a plot of Aleutian Low SLPa distributions in the two eras
+nc <- nc_open("/Users/MikeLitzow 1/Documents/R/climate data/prmsl.mon.mean.7.28.15.nc") #new version!
+
+raw <- ncvar_get(nc, "time")
+h <- raw/24
+d <- dates(h, origin = c(1,1,1800))
+
+# Pick start and end dates (Jan 1950-Dec 2012):
+d <- d[949:1704]  
+
+# just the box in spatial change in SD plot! 48-56 deg. N, 192-206 deg. E:
+sd.x <- ncvar_get(nc, "lon", start=97, count=8)
+sd.y <- ncvar_get(nc, "lat", start=18, count=5)
+
+SLP1 <- ncvar_get(nc, "prmsl", start=c(97,18,949), count=c(8,5,length(d)))
+
+SLP1 <- aperm(SLP1, 3:1)  # First, reverse order of dimensions ("transpose" array)
+SLP1 <- SLP1[,5:1,]  # Reverse order of latitudes to be increasing for convenience (in later plotting)
+sd.y <- rev(sd.y)  # Also reverse corresponding vector of lattidues
+
+SLP1 <- matrix(SLP1, nrow=dim(SLP1)[1], ncol=prod(dim(SLP1)[2:3]))  # Change to matrix
+# Keep track of corresponding latitudes and longitudes of each column:
+lat <- rep(sd.y, length(sd.x))   # Vector of latitudes
+lon <- rep(sd.x, each = length(sd.y))   # Vector of longitudes
+
+dimnames(SLP1) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
+
+m <- months(d)
+f <- function(x) tapply(x, m, mean)  # function to compute monthly means for a single time series
+
+p.mu1 <- apply(SLP1, 2, f)	# Compute monthly means for each time series (location)
+p.mu1 <- p.mu1[rep(1:12, round(length(d)/12)),] 
+
+# Compute matrix of anomalies!
+SLP1.anom <- (SLP1 - p.mu1)
+
+# and smoothing with 11-mo rolling mean
+SLP1.anom <- rollmean(SLP1.anom, 11, fill=NA)
+mean.anom <- rowMeans(SLP1.anom)
+
+# make a data frame
+slp <- data.frame(slp.11 = mean.anom, year=rep(1950:2012, each=12), month=1:12)
+slp$era <- ifelse(slp$year <= 1988, "1950-1988", "1989-2012")
+
+slp$dec.yr <- slp$year+(slp$month-0.5)/12
+
+# set colors
+cb <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+# # make a time series plot for candidate seminar!
+# png("slp time series", 6, 4, units="in", res=300)
+# ggplot(slp, aes(dec.yr, slp.11)) + 
+#   theme_linedraw() +
+#   geom_line(size=0.2, color=cb[4]) +
+#   geom_vline(xintercept = 1988+11.5/12, lty=2) +
+#   theme(axis.title.x=element_blank(), axis.text = element_text(size=14), axis.title.y=element_text(size=20)) +
+#   ylab("SLP anomaly (Pa)") 
+# dev.off()
+
+# save for combined plot
+
+AL.p <- ggplot(slp, aes(slp.11, fill=era)) + 
+  geom_density(alpha=0.8) +
+  xlim(-700,700) + 
+  scale_fill_manual(values=cb[c(6,8)]) +
+  theme_bw() +
+  theme(legend.position = c(0.2,0.8), legend.title = element_blank()) +
+  xlab("Sea level pressure anomaly (Pa)") +
+  ggtitle("Aleutian Low SLPa distribution")
+
+# # version for talk  
+# png("slp pdf for talk.png", 6,4, units="in", res=300)
+# ggplot(slp, aes(slp.11, fill=era)) + 
+#   geom_density(alpha=0.8) +
+#   xlim(-700,700) + 
+#   scale_fill_manual(values=cb[c(6,8)]) +
+#   theme_linedraw() +
+#   theme(legend.position = c(0.2,0.8), legend.title = element_blank(), 
+#         axis.text = element_text(size=14), axis.title = element_text(size=20),
+#         legend.text = element_text(size=16)) +
+#   xlab("Sea level pressure anomaly (Pa)") 
+# dev.off()
+# and compare the variance between the two eras
+# using a randomization test
+F.rand <- NA
+
+for(i in 1:10000){
+ # i <- 1
+  temp.x <- sample(slp$slp.11, length(slp$slp.11[slp$year<=1988]), replace=T)
+  temp.y <- sample(slp$slp.11, length(slp$slp.11[slp$year>1988]), replace=T)
+  
+  F.rand[i] <- var.test(temp.x, temp.y)$statistic
+}
+
+sum(F.rand > var.test(slp$slp.11[slp$year<=1988], slp$slp.11[slp$year>1988])$statistic)
+
+var.test(slp$slp.11[slp$year<=1988], slp$slp.11[slp$year>1988])
+
+# F test to compare two variances
+# 
+# data:  slp$slp.11[slp$year <= 1988] and slp$slp.11[slp$year > 1988]
+# F = 1.843, num df = 462, denom df = 282, p-value = 3.144e-08
+# alternative hypothesis: true ratio of variances is not equal to 1
+# 95 percent confidence interval:
+#   1.490123 2.267081
+# sample estimates:
+#   ratio of variances 
+# 1.842961
+
 
 # load biology data
 b.dat <- read.csv("salmon and non-salmon biology mar 28.csv", row.names = 1)
@@ -37,26 +154,10 @@ b.dat <- scale(b.dat[rownames(b.dat) %in% 1965:2012,])
 dat1 <- as.matrix(c.dat[rownames(c.dat) %in% 1950:1988,4:10])
 dat2 <- as.matrix(c.dat[rownames(c.dat) %in% 1989:2012,4:10])
 
-# and fit pca by era
-
-pca.1 <- svd(cov(scale(dat1), use="p"))
-pca.2 <- svd(cov(scale(dat2), use="p"))
-
-# remove NAs and calculate PC scores from svd
-x.na <- is.na(dat1)
-x.0 <- dat1
-x.0[x.na==T] <- 0
-pc1.early <- x.0 %*% pca.1$u[,1]
-
-x.na <- is.na(dat2)
-x.0 <- dat2
-x.0[x.na==T] <- 0
-pc1.late <- x.0 %*% pca.2$u[,1]
 
 # and put into early and late climate DFs
-clim.early <- as.data.frame(cbind(c.dat[rownames(c.dat) %in% 1950:1988,c(2,8)], 
-                    pc1.early))
-clim.late <- as.data.frame(cbind(c.dat[rownames(c.dat) %in% 1989:2012,c(2,8)], pc1.late))
+clim.early <- as.data.frame(cbind(c.dat[rownames(c.dat) %in% 1950:1988,c(2,3,8)]))
+clim.late <- as.data.frame(cbind(c.dat[rownames(c.dat) %in% 1989:2012,c(2,3,8)]))
 
 sm.early <- rollmean(clim.early,2, align="right", fill=NA)
 rownames(sm.early) <- 1950:1988
@@ -69,16 +170,16 @@ clim.early <- clim.early[rownames(clim.early) >= 1965,]
 sm.early <- as.data.frame(sm.early[rownames(sm.early) >= 1965,])
 
 # now make output objects and find era-specific relationships!
-pdo.e <- sst.e <- pc1.e <- pdo.l <- sst.l <- pc1.l <- NA
+pdo.e <- sst.e <- npgo.e <- pdo.l <- sst.l <- npgo.l <- NA
 
 # also keeping track of whether raw or smoothed data were superior in each case
 best.mod <- matrix(nrow=14, ncol=3)
-dimnames(best.mod) <- list(colnames(b.dat), c("PDO", "SST", "PC1"))
+dimnames(best.mod) <- list(colnames(b.dat), c("PDO", "SST", "NPGO"))
 
 # now loop through each biology ts!
 
 for(i in 1:ncol(b.dat)){
-  #i <- 1
+ # i <- 1
   # first, loop through the early climate-biology relationships
   pdo1 <- lm(b.dat[rownames(b.dat) %in% 1965:1988,i] ~ clim.early$FMA.PDO, na.action = "na.exclude")
   pdo2 <- lm(b.dat[rownames(b.dat) %in% 1965:1988,i] ~ sm.early$FMA.PDO, na.action = "na.exclude")
@@ -98,14 +199,14 @@ for(i in 1:ncol(b.dat)){
   # record best model for later plotting
   ifelse(AICc(sst1) < AICc(sst2), best.mod[i,2] <- 1, best.mod[i,2] <- 2)
   
-  pc1.1 <- lm(b.dat[rownames(b.dat) %in% 1965:1988,i] ~ clim.early$pc1.early, na.action = "na.exclude")
-  pc1.2 <- lm(b.dat[rownames(b.dat) %in% 1965:1988,i] ~ sm.early$pc1.early, na.action = "na.exclude")
+  npgo.1 <- lm(b.dat[rownames(b.dat) %in% 1965:1988,i] ~ clim.early$FMA.NPGO, na.action = "na.exclude")
+  npgo.2 <- lm(b.dat[rownames(b.dat) %in% 1965:1988,i] ~ sm.early$FMA.NPGO, na.action = "na.exclude")
   
-  ifelse(AICc(pc1.1) < AICc(pc1.2), pc1.e[i] <- summary(pc1.1)$coefficients[2,1], 
-         pc1.e[i] <- summary(pc1.2)$coefficients[2,1])
+  ifelse(AICc(npgo.1) < AICc(npgo.2), npgo.e[i] <- summary(npgo.1)$coefficients[2,1], 
+         npgo.e[i] <- summary(npgo.2)$coefficients[2,1])
 
   # record best model for later plotting
-  ifelse(AICc(pc1.1) < AICc(pc1.2), best.mod[i,3] <- 1, best.mod[i,3] <- 2)
+  ifelse(AICc(npgo.1) < AICc(npgo.2), best.mod[i,3] <- 1, best.mod[i,3] <- 2)
   
   # and now the late era
   # using either smoothed or unsmoothed data depending on best model for early era!
@@ -117,14 +218,14 @@ for(i in 1:ncol(b.dat)){
   mod <- lm(b.dat[rownames(b.dat) %in% 1989:2012,i] ~ x, na.action = "na.exclude")
   sst.l[i] <- summary(mod)$coefficients[2,1]
   
-  ifelse(AICc(pc1.1) < AICc(pc1.2), x <- clim.late$pc1.late, x <- sm.late$pc1.late)
+  ifelse(AICc(npgo.1) < AICc(npgo.2), x <- clim.late$FMA.NPGO, x <- sm.late$FMA.NPGO)
   mod <- lm(b.dat[rownames(b.dat) %in% 1989:2012,i] ~ x, na.action = "na.exclude")
-  pc1.l[i] <- summary(mod)$coefficients[2,1]
+  npgo.l[i] <- summary(mod)$coefficients[2,1]
   }
 
 hist(pdo.e); hist(pdo.l)
 hist(sst.e); hist(sst.l)
-hist(-pc1.e); hist(-pc1.l)
+hist(npgo.e); hist(npgo.l)
 
 t.test(abs(pdo.e), abs(pdo.l), paired = T)
 # Paired t-test
@@ -150,54 +251,75 @@ t.test(abs(sst.e), abs(sst.l), paired = T)
 #   mean of the differences 
 # 0.8169006 
 
-t.test(abs(pc1.e), abs(pc1.l), paired = T)
+t.test(abs(npgo.e), abs(npgo.l), paired = T)
 # Paired t-test
 # 
-# data:  abs(pc1.e) and abs(pc1.l)
-# t = 0.88656, df = 13, p-value = 0.3914
+# data:  abs(npgo.e) and abs(npgo.l)
+# t = 3.6067, df = 13, p-value = 0.003191
 # alternative hypothesis: true difference in means is not equal to 0
 # 95 percent confidence interval:
-#   -0.04605126  0.11015432
+#   0.08482157 0.33821883
 # sample estimates:
 #   mean of the differences 
-# 0.03205153 
+# 0.2115202
+
 hist(pdo.e); hist(pdo.l)
 hist(sst.e); hist(sst.l)
 hist(-pc1.e); hist(-pc1.l)
 
-plot.cors <- data.frame(Predictor=c(rep("PDO",28), rep("SST",28), rep("Climate PC1",28)), 
+sc.pdo <- scale(c(pdo.e, pdo.l), center=F)[1:28]
+sc.sst <- scale(c(sst.e, sst.l), center=F)[1:28]
+sc.npgo <- scale(c(npgo.e, npgo.l), center=F)[1:28]
+
+plot.cors <- data.frame(Predictor=c(rep("PDO",28), rep("SST",28), rep("NPGO",28)), 
                         Era=rep(c(rep("1965-1988",14), rep("1989-2012",14)),3), 
-                        value=abs(c(pdo.e, pdo.l, sst.e, sst.l, -pc1.e, -pc1.l)))
-# adjust bins
-xb <- 7
-
-pdf("histograms community response to climate.pdf", 6, 4)
-ggplot(plot.cors, aes(value, fill=Era)) + geom_histogram(bins=xb, position = "dodge") +
-  facet_wrap(~Predictor) + xlab("Regression coefficient (absolute value)")#+ geom_freqpoly(aes(color=Era), bins=xb)
-dev.off()
-
-png("histograms community response to climate.png", 6, 4, units="in", res=300)
-ggplot(plot.cors, aes(value)) + geom_histogram(bins=xb, position = "dodge", fill="gray65", color="black") +
-  facet_grid(Era ~ Predictor, scales="free_y") + xlab("Regression coefficient (absolute value)") +
-  theme(axis.title = element_text(size=16)) + theme(axis.text = element_text(size=16)) + 
-  theme(strip.text = element_text(size=16))
-  
-dev.off()
-
-restr.cors <- filter(plot.cors, Predictor != "Climate PC1")
-png("histograms community response to PDO and SST.png", 4, 4, units="in", res=300)
-ggplot(restr.cors, aes(value)) + geom_histogram(bins=xb, position = "dodge", fill="gray65", color="black") +
-  facet_grid(Era ~ Predictor, scales="free_x") + xlab("Regression coefficient (absolute value)") +
-  theme(axis.title = element_text(size=14)) + theme(axis.text = element_text(size=12)) + 
-  theme(strip.text = element_text(size=14))
-
-dev.off()
+                        value=abs(c(pdo.e, pdo.l, sst.e, sst.l, npgo.e, npgo.l)), 
+                        scaled.value=abs(c(sc.pdo, sc.sst, sc.npgo)))
+# # adjust bins
+# xb <- 7
+# 
+# pdf("histograms community response to climate.pdf", 6, 4)
+# ggplot(plot.cors, aes(value, fill=Era)) + geom_histogram(bins=xb, position = "dodge") +
+#   facet_wrap(~Predictor) + xlab("Regression coefficient (absolute value)")#+ geom_freqpoly(aes(color=Era), bins=xb)
+# dev.off()
+# 
+# png("histograms community response to climate.png", 6, 4, units="in", res=300)
+# ggplot(plot.cors, aes(value)) + geom_histogram(bins=xb, position = "dodge", fill="gray65", color="black") +
+#   facet_grid(Era ~ Predictor, scales="free_y") + xlab("Regression coefficient (absolute value)") +
+#   theme(axis.title = element_text(size=16)) + theme(axis.text = element_text(size=16)) + 
+#   theme(strip.text = element_text(size=16))
+#   
+# dev.off()
+# 
+plot.cors$Predictor <- reorder(plot.cors$Predictor, rep(c(1,3,2), each=28))
+# 
+# png("histograms community response to PDO NPGO SST.png", 4, 4, units="in", res=300)
+# ggplot(plot.cors, aes(value)) + theme_gray() +
+#   geom_histogram(bins=xb, position = "dodge", fill="gray65", color="black") +
+#   facet_grid(Era ~ Predictor, scales="free_x") + xlab("Regression coefficient (absolute value)") +
+#   theme(axis.title = element_text(size=14)) + theme(axis.text = element_text(size=12)) + 
+#   theme(strip.text = element_text(size=14))
+# 
+# dev.off()
 
 # save for combined plot
-xb <-7
-clim.p <- ggplot(restr.cors, aes(value)) + geom_histogram(bins=xb, position = "dodge", fill="gray65", color="black") +
-  facet_grid(Era ~ Predictor, scales="free_x") + xlab("Regression coefficient (absolute value)") +
-  theme_gray() + ggtitle("Community response to climate")
+# xb <-7
+# clim.p <- ggplot(plot.cors, aes(value)) + geom_histogram(bins=xb, position = "dodge", aes(fill=Era), color="black") +
+#   facet_grid(Era ~ Predictor, scales="free_x") + xlab("Regression coefficient (absolute value)") +
+#   theme_gray() + ggtitle("Community response to climate") +
+#   scale_fill_manual(values=cb[c(6,8)]) +
+#   theme(legend.position = "none")
+
+# make density plot 
+
+clim.p <- ggplot(plot.cors, aes(scaled.value)) + geom_density(aes(fill=Era), color="black", alpha=0.8) +
+  facet_wrap(~ Predictor) + 
+  theme_bw() + ggtitle("Community response to climate") +
+  scale_fill_manual(values=cb[c(6,8)]) +
+  theme(legend.position = c(0.18,0.88), legend.title = element_blank(), legend.key.size = unit(4, "mm"), legend.margin = margin(1,1,1,1, "mm")) +
+  xlab("Scaled regression coefficient (absolute value)") +
+  xlim(0,3) 
+
 
 # calculate pairwise correlations in each era
 e.cor <- cor(b.dat[rownames(b.dat) <= 1988,], use="p")
@@ -226,14 +348,27 @@ t.test(abs(e.cor), abs(l.cor), paired = T)
 # and combine for a plot
 comm.cors <- data.frame(era=rep(c("1965-1988", "1989-2012"), each=length(e.cor)), cor=c(abs(e.cor), abs(l.cor)))
 xb <- 13
-comm.p <- ggplot(comm.cors, aes(cor)) + geom_histogram(bins=xb, position = "dodge", fill="gray65", color="black") +
-  facet_grid( ~ era) + xlab("Pairwise correlation (absolute value)") +
-  theme_gray() + ggtitle("Pairwise community correlations")
+
+comm.p <- ggplot(comm.cors, aes(cor)) + geom_density(aes(fill=era), color="black", alpha=0.8) +
+  xlab("Pairwise correlation (absolute value)") +
+  theme_bw() + ggtitle("Pairwise community correlations") +
+  scale_fill_manual(values=cb[c(6,8)]) +
+  theme(legend.position = c(0.6,0.8), legend.title = element_blank()) +
+  xlab("Pairwise correlation (absolute value)") +
+  xlim(0,1)
+
+
 comm.p
 
-png("climate-community and community-community plot.png", 7,4, units="in", res=300)
-ggarrange(clim.p,  comm.p, labels = c("a)", "b)"), ncol=2)
+
+# png("climate-community and community-community plot.png", 7,4, units="in", res=300)
+# ggarrange(clim.p,  comm.p, labels = c("a)", "b)"), ncol=2, widths = c(1,0.8))
+# dev.off()
+
+pdf("AL and climate-community and community-community plot.pdf",4,10)
+ggarrange(AL.p, clim.p,  comm.p, labels = c("a)", "b)", "c)"), ncol=1, nrow=3)
 dev.off()
+
 
 # now make SI plots of the regressions in early and late eras...
 
@@ -265,8 +400,8 @@ labels <- paste(good.names, " (", best.mod[,1], " yr.)", sep="")
 pdo.plot$labels <- rep(labels, each=length(1965:2012))
 
 pp <- ggplot(pdo.plot, aes(x=x, y=y, color=Era)) + geom_point() + facet_wrap(~labels) + 
-  scale_color_manual(values=c("1965-1988" = cb[6], "1989-2012" = cb[7])) + 
-  geom_smooth(method = "lm", se=F) + theme_gray() +
+  scale_color_manual(values=c("1965-1988" = cb[6], "1989-2012" = cb[8])) + 
+  geom_smooth(method = "lm", se=F) + theme_bw() +
   xlab("PDO") + ylab("Standard anomaly") +
   theme(strip.text=element_text(size=9),legend.title = element_blank())
 
@@ -276,9 +411,45 @@ dev.off()
 
 pdf("community responses PDO SI Fig.pdf", 6,6)
 ggplot(pdo.plot, aes(x=x, y=y, color=Era)) + geom_point() + facet_wrap(~labels) + 
-  scale_fill_manual(values=c("1965-1988" = cb[6], "1989-2012" = cb[7])) + 
+  scale_fill_manual(values=c("1965-1988" = cb[6], "1989-2012" = cb[8])) + 
   geom_smooth(method = "lm", se=F) + theme_gray() + xlab("PDO") + ylab("Standard anomaly")
 dev.off()
+
+# and NPGO
+npgo.plot <- data.frame(TS=NA, year=NA, Era=NA, x=NA, y=NA)
+
+for(i in 1:ncol(b.dat)){
+  # i <- 1
+  temp <- data.frame(TS=colnames(b.dat)[i], year=1965:2012, 
+                     Era=c(rep("1965-1988", length(1965:1988)), rep("1989-2012", length(1989:2012))), x=NA, y=b.dat[,i])
+  ifelse(best.mod[i,1] == 1, temp$x <- clim.early$FMA.NPGO, temp$x <- sm.early$FMA.NPGO)
+  
+  npgo.plot <- rbind(npgo.plot, temp)
+}
+
+# drop leading NA
+npgo.plot <- npgo.plot[2:nrow(npgo.plot),]
+
+labels <- paste(good.names, " (", best.mod[,1], " yr.)", sep="")
+npgo.plot$labels <- rep(labels, each=length(1965:2012))
+
+pp <- ggplot(npgo.plot, aes(x=x, y=y, color=Era)) + geom_point() + facet_wrap(~labels) + 
+  scale_color_manual(values=c("1965-1988" = cb[6], "1989-2012" = cb[8])) + 
+  geom_smooth(method = "lm", se=F) + theme_bw() +
+  xlab("NPGO") + ylab("Standard anomaly") +
+  theme(strip.text=element_text(size=9),legend.title = element_blank())
+
+png("community responses npgo SI Fig.png", 7,6, units="in", res=300)
+reposition_legend(pp, 'left', panel = 'panel-4-3')
+dev.off()
+
+pdf("community responses npgo SI Fig.pdf", 6,6)
+ggplot(npgo.plot, aes(x=x, y=y, color=Era)) + geom_point() + facet_wrap(~labels) + 
+  scale_fill_manual(values=c("1965-1988" = cb[6], "1989-2012" = cb[8])) + 
+  geom_smooth(method = "lm", se=F) + theme_gray() + xlab("npgo") + ylab("Standard anomaly")
+dev.off()
+
+
 
 # now SST
 sst.plot <- data.frame(TS=NA, year=NA, Era=NA, x=NA, y=NA)
@@ -303,15 +474,32 @@ ggplot(sst.plot, aes(x=x, y=y, color=Era)) + geom_point() + facet_wrap(~labels) 
   geom_smooth(method = "lm", se=F) + theme(legend.position = "top") + xlab("SST (ºC)") + ylab("Scaled anomaly")
 dev.off()
 
+
 tp <- ggplot(sst.plot, aes(x=x, y=y, color=Era)) + geom_point() + facet_wrap(~labels) + 
-  scale_color_manual(values=c("1965-1988" = cb[6], "1989-2012" = cb[7])) + 
-  geom_smooth(method = "lm", se=F) + theme_gray() +
+  scale_color_manual(values=c("1965-1988" = cb[6], "1989-2012" = cb[8])) + 
+  geom_smooth(method = "lm", se=F) + theme_bw() +
   xlab("SST (ºC)") + ylab("Standard anomaly") +
   theme(strip.text=element_text(size=9),legend.title = element_blank())
 
 png("community responses SST SI Fig.png", 7,6, units="in", res=300)
 reposition_legend(tp, 'left', panel = 'panel-4-3')
 dev.off()
+
+
+# now make a version for talk
+
+sst.plot$labels <- rep(good.names, each=length(1965:2012))
+
+tp <- ggplot(sst.plot, aes(x=x, y=y, color=Era)) + geom_point() + facet_wrap(~labels, nrow=3) + 
+  scale_color_manual(values=c("1965-1988" = cb[6], "1989-2012" = cb[8])) + 
+  geom_smooth(method = "lm", se=F) + theme_gray() +
+  xlab("SST (ºC)") + ylab("Standard anomaly") +
+  theme(strip.text=element_text(size=9),legend.title = element_blank())
+
+png("community responses SST SEMINAR.png", 7,4, units="in", res=300)
+reposition_legend(tp, 'left', panel = 'panel-5-3')
+dev.off()
+
 # note that the following was mistaken bc I scaled climate values by era, so the mean = 0 for each era by definition!
 # # and plot distributions for each predictor in the two eras!
 # names(clim.early) <- names(clim.late) <- c("PDO", "SST", "Climate PC1")
