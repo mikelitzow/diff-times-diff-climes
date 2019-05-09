@@ -12,6 +12,8 @@ library(gridExtra)
 library(broom)
 library(lemon)
 
+# conduct the analysis for Fig. 1 in the paper
+
 # begin with a plot of Aleutian Low SLPa distributions in the two eras
 
 # load the SLP data as described in methods/SI
