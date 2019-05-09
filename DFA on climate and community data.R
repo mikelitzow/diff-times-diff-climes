@@ -26,28 +26,6 @@ library(cowplot)
 # second, fit DFA models to the entire data set and calculate rolling window correlations
 # between shared trends and individual time series
 #########################################################################################
-# # begin with environmental data
-# # load data...
-# dat <- read.csv("/Users/MikeLitzow 1/Documents/R/time and climes/clim vars for ordination.csv", row.names=1)
-# 
-# # put years into row names
-# rownames(dat) <- dat[,1]
-# dat <- dat[,-1]
-# 
-# # dropping AL and NPI as I think we will leave out these dynamics to keep the paper simple
-# # the relevant atmosphere-ocean dynamics have been addequately addressed in PRSB ms. for our purposes!
-# dat <- dat[,-c(1,2)]
-# 
-# head(dat)
-# 
-# # remove some extra  time series
-# dat <- dat[,-c(5,6,8,9,10,11,14,17)]
-# 
-# 
-# # change names to plot-friendly labels
-# colnames(dat) <- c("PDO", "NPGO", "SLP gradient", "Freshwater", "Wind stress", "Downwelling", "SST", "Advection", "SSH")
-# 
-# write.csv(dat, "GOA environmental data.csv")
 
 # load environmental data
 dat <- read.csv("GOA environmental data.csv", row.names = 1)
@@ -95,6 +73,7 @@ e.cli.dat <- t(e.cli.dat)
 
 # changing convergence criterion to ensure convergence
 cntl.list = list(minit=200, maxit=20000, allow.degen=FALSE, conv.test.slope.tol=0.1, abstol=0.0001)
+
 # set up forms of R matrices
 levels.R = c("diagonal and equal",
              "diagonal and unequal",
@@ -216,17 +195,9 @@ late.env <- ggplot(plot.CI.late, aes(x=plot.names, y=mean)) + geom_bar(position=
   theme(axis.text.x  = element_text(angle=45, hjust=1,  size=12), axis.title.y = element_blank()) +
   geom_hline(yintercept = 0) + ggtitle("1989-2012 environment") + ylim(-0.6, 0.8)
 
-# # combine
-# png("loadings plot non-detrended environmental dfa both eras.png", 6, 4, units="in", res=300)
-# ggarrange(early.plot,  late.plot, labels = c("a)", "b)"),  widths=c(1.3,1), ncol=2)
-# dev.off()
-
 
 ##############
 # now find the best model for entire environmental time series
-
-
-# cntl.list = list(minit=200, maxit=20000, allow.degen=FALSE, conv.test.slope.tol=0.1, abstol=0.0001)
 
 # object for model data
 model.data = data.frame()
@@ -293,7 +264,6 @@ write.csv(arrange(model.data, AICc), "DFA model selection environment all years.
 # fit the best model to the entire time series
 # and calculate the moving correlations for each TS!
 
-cntl.list = list(minit=200, maxit=20000, allow.degen=FALSE, conv.test.slope.tol=0.1, abstol=0.0001)
 model.list = list(A="zero", m=1, R="unconstrained")
 mod <- MARSS(all.clim.dat, model=model.list, z.score=TRUE, form="dfa", control=cntl.list)
 
@@ -315,23 +285,6 @@ for(i in 1950:1988){
 plot1 <- gather(trend1)
 plot1$year <- 1962:2000
 
-# plot2 <- gather(trend2)
-# plot2$year <- 1977:2000
-# plot2$trend <- "Trend 2"
-# 
-# plot3 <- gather(trend3)
-# plot3$year <- 1977:2000
-# plot3$trend <- "Trend 3"
-
-# # set colors
-# cb <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-# 
-# png("environmental correlations with trend for best DFA model entire time series.png", 8,3, units="in", res=300)
-# ggplot(plot1, aes(year, value)) +
-#   facet_wrap(~key, nrow=2, ncol=4) + geom_hline(yintercept = 0, color="dark grey") + theme_grey() +
-#   geom_line(color=cb[2]) + 
-#   xlab("") + ylab("Correlation") + theme(axis.title.x = element_blank())
-# dev.off()
 
 # save for combined plot!
 env.corr.plot <- ggplot(plot1, aes(year, value)) +
@@ -364,13 +317,6 @@ for(i in 1950:1988){
 plot1 <- gather(trend1)
 plot1$year <- 1962:2000
 
-# png("environmental correlations with trend for SECOND-best DFA model entire time series.png", 8,3, units="in", res=300)
-# ggplot(plot1, aes(year, value)) +
-#   facet_wrap(~key, nrow=2, ncol=4, scales="free_y") + theme_grey() +
-#   geom_line(color=cb[2]) + 
-#   xlab("") + ylab("Correlation") + theme(axis.title.x = element_blank())
-# dev.off()
-
 # save for SI
 
 pdf("SI - environment corrs 2nd best dfa model.pdf", 8,3)
@@ -383,20 +329,6 @@ dev.off()
 ################################
 # now...the community analysis #
 ################################
-# 
-# dat <- read.csv("salmon and non-salmon biology mar 28.csv", row.names = 1)
-# 
-# # drop GOAPOP
-# keep <- colnames(dat)!="GOAPOP"
-# dat <- dat[,keep] 
-# 
-# # check
-# head(dat)
-# 
-# # limit to 1965:2012
-# dat <- dat[rownames(dat) <= 2012,]
-# 
-# write.csv(dat, "GOA community data.csv")
 
 dat <- read.csv("GOA community data.csv", row.names=1)
 
@@ -489,30 +421,13 @@ Z.est = coef(mod.early, type="matrix")$Z
 H.inv = varimax(coef(mod.early, type="matrix")$Z)$rotmat
 Z.rot = as.data.frame(Z.est %*% H.inv)
 
-# and plot
-# reverse trend 2 to plot
-#Z.rot[,2] <- -Z.rot[,2]
-
 Z.rot$names <- rownames(e.comm.dat)
 Z.rot <- arrange(Z.rot, V1)
 Z.rot <- gather(Z.rot[,c(1,2)])
 Z.rot$names <- rownames(e.comm.dat)
 Z.rot$plot.names <- reorder(Z.rot$names, 1:28)
-# ggplot(Z.rot, aes(plot.names, value, fill=key)) + geom_bar(stat="identity", position="dodge") +
-#   theme_gray() 
-
-# # and rotate the trends!
-# trends.rot = solve(H.inv) %*% mod.early$states
-# 
-# # plot these trends!
-# plot.trends <- as.data.frame(t(trends.rot)) %>%
-#   gather()
-# plot.trends$year <- 1965:1988
-# 
-# ggplot(plot.trends, aes(year, value, color=key)) + geom_line() + theme_gray()
 
 # and the late era
-
 # equal var covar one trend is the best for this era!
 model.list = list(A="zero", m=1, R="diagonal and equal")
 mod.late = MARSS(l.comm.dat, model=model.list, z.score=TRUE, form="dfa", control=cntl.list)
@@ -528,14 +443,8 @@ plot.CI.late <- arrange(plot.CI.late, mean)
 plot.CI.late$names.order <- reorder(plot.CI.late$names, c(13,12,9,7,2,1,11,10,14,3,4,5,8,6))
 dodge <- position_dodge(width=0.9)
 
-# ggplot(plot.CI.late, aes(x=names.order, y=mean)) + geom_bar(position="dodge", stat="identity") +
-#   geom_errorbar(aes(ymax=upCI, ymin=lowCI), position=dodge, width=0.5) +
-#   ylab("Loading") + xlab("") + theme(axis.text.x = element_text(angle = 90, vjust=0, hjust=1)) +
-#   geom_hline(yintercept = 0) + theme_gray()
-
 # combine into one plot
 Z.rot$key <- rep(c("Trend 1", "Trend 2"), each=14)
-#plot.CI.late$names.order <- reorder(plot.CI.late$names, plot.CI.late$mean)
 
 early.comm <- ggplot(Z.rot, aes(plot.names, value, fill=key)) + geom_bar( position="dodge",stat="identity") +
   theme_bw() + ylab("Loading") + xlab("") + ggtitle("1965-1988 community") + 
@@ -551,14 +460,6 @@ late.comm <- ggplot(plot.CI.late, aes(x=names.order, y=mean)) +
   geom_hline(yintercept = 0) + ggtitle("1989-2012 community") + 
   ylim(-0.47,0.56)
 
-# # combine
-# png("loadings plot non-detrended community dfa both eras.png", 8, 5, units="in", res=300)
-# ggarrange(early.plot,  late.plot, labels = c("c)", "d)"),  widths=c(1.2,1), ncol=2)
-# dev.off()
-
-# combine era-specific environment and biology loadings
-# into a single plot
-
 # start by making a blank object for spacing the top row
 blank <- ggplot() + theme_void()
 
@@ -573,7 +474,7 @@ plot_grid(top, bottom, nrow=2, rel_heights = c(0.9, 1))
 dev.off()
 
 
-# get correlations between correlations in the two eras
+# get correlations between loadings in the two eras
 # make a data frame to compbine all loadings
 cor.df <- data.frame(names=Z.rot$names[1:14], load1=Z.rot$value[Z.rot$key=="Trend 1"], load2=Z.rot$value[Z.rot$key=="Trend 2"])
 
@@ -610,8 +511,6 @@ all.comm.dat = dat
 
 # and transpose
 all.comm.dat <- t(all.comm.dat)
-
-cntl.list = list(minit=200, maxit=20000, allow.degen=FALSE, conv.test.slope.tol=0.1, abstol=0.0001)
 
 # fit models and calculate residual autocorrelation
 model.data = data.frame()
@@ -712,7 +611,7 @@ pp <- ggplot(plot, aes(year, value, color=trend)) + geom_line() +
   xlab("") + ylab("Correlation") + theme(legend.title=element_blank(), axis.title.x = element_blank())+ 
   scale_color_manual(values=c("Trend 1" = cb[2], "Trend 2" = cb[3], "Trend 3" = cb[4])) +
   xlim(1962,2000) +
-  ggtitle("Community")#+
+  ggtitle("Community")
 
 comm.corr.plot <- reposition_legend(pp, 'center', panel = 'panel-4-3')
 
